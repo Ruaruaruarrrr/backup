@@ -17,9 +17,9 @@
 
 struct file {
 	struct vnode *file_vnode;
-	struct lock *file_lock
-    off_t file_offset;
-    int file_mode;
+	struct lock *file_lock;
+    	off_t file_offset;
+    	int file_mode;
 	int file_ref;       
 };
 
