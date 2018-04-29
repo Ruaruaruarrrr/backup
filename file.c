@@ -35,14 +35,14 @@ int create_open_file(char kernel_filename, int mode, int index){
 	}
     
     //create open file lock 
-	new_file->lock_ptr = lock_create("file lock");
-	if (new_file->lock_ptr == 0) {
-		vfs_close(new_file->v_ptr);
+	new_file->file_lock = lock_create("file lock");
+	if (new_file->file_lock == 0) {
+		vfs_close(new_file->file_vnode);
 		kfree(new_file);
 		return ENFILE;
 	}
 
-	new_file->offset = 0;
+	new_file->file_offset = 0;
 	new_file->file_mode = mode;
 	new_file->file_ref = 1;
 	curproc->descriptor_table[index] = new_file;
@@ -53,13 +53,13 @@ int create_open_file(char kernel_filename, int mode, int index){
 }
 
 
-int sys_open(userptr_t filename, int mode, int *retval){
+int file_open(userptr_t filename, int mode, int *retval){
     if (filename == NULL) {
 		return EFAULT;
 	}
     //filename copy
     char kernel_filename[PATH_MAX];
-    int err1 = copyinstr(filename, kernel_filename, PATH_MAX, null);
+    int err1 = copyinstr(filename, kernel_filename, PATH_MAX, NULL);
 	if (err1) {
 		kfree(kernel_filename);
 		return err1;
@@ -97,6 +97,9 @@ int sys_open(userptr_t filename, int mode, int *retval){
 
 
 
+
+
+
 int file_close(int fd) {
 
 	//check if file descriptor is legit
@@ -107,6 +110,36 @@ int file_close(int fd) {
 		return EBADF;
 	}
 	struct file *new_file = curproc->descriptor_table[fd];	
+
+	//create a lock for accessing the table
+	lock_acquire(new_file->file_lock);
+	curproc->descriptor_table[fd] = NULL;
+	new-file->file_ref -= 1;
+	lock_release(new_file->file_lock);
+
+	//if it is the last reference of this file
+	if (new_file->file_ref == 0) {
+		vfs_close(file->v_ptr);
+		lock_destroy(new_file->file_lock);
+		kfree(new_file);
+	}
+
+	return 0;
+}
+
+
+
+
+int close(int fd, struct proc *proc) {
+
+	//check if file descriptor is legit
+	if (fd < 0 || fd >= OPEN_MAX) {
+		return EBADF;
+	}
+	if (proc->descriptor_table[fd] == NULL){
+		return EBADF;
+	}
+	struct file *new_file = proc->descriptor_table[fd];	
 
 	//create a lock for accessing the table
 	lock_acquire(new_file->file_lock);
@@ -122,6 +155,86 @@ int file_close(int fd) {
 	}
 
 	return 0;
+
+}
+
+
+
+int file_read(int fileNumber, userptr_t buffer, size_t size, int *retval){
+    //check tht input fileNumber valid
+    if(fileNumber < 0 || fileNumber >= OPEN_MAX || !curproc->descriptor_table[filenumber]){
+        return EBADF; // bad file number
+  }
+  //creat a new file data struct equal to the file which with the index of filenumber(input)
+  struct file *new_file = curproc->descriptor_table[filenumber];
+
+  // Check the the file hasn't been opened in O_WRONLY mode
+  int mode = new_file->file_mode & O_ACCMODE;
+  if(mode == O_WRONLY){
+    return EBADF;
+  }
+
+  //Initialize a uio suitable for I/O from a kernel buffer
+  struct iovec iov;
+        struct uio myuio;
+  //acquire the open file lock and create a uio in UIO_USERSPACE and UIO_READ mode
+  lock_acquire(new_file -> file_lock);
+  off_t new_offset = new_file->file_offset;
+  uio_uinit(&iov, &myuio, buffer, size, file->file_offset, UIO_READ);
+
+
+  int result = VOP_READ(new_file->file_vnode, &myuio);
+        if (result) {
+                lock_release(new_file->file_lock);
+                return result;
+        }
+
+  //caculate the read amount by use initial file_offset minus new_offset return by uio
+  new_file->file_lock = myuio.uio_offset;
+  *retval = new_file->file_offset - new_offset;
+  lock_release(new_file->file_lock);
+
+  return 0;
+}
+
+
+
+
+int file_write(int fileNumber, userptr_t buffer, size_t size, int *retval){
+    //check tht input fileNumber valid
+    if(fileNumber < 0 || fileNumber >= OPEN_MAX || !curproc->descriptor_table[filenumber]){
+      return EBADF; // bad file number
+
+    //creat a new file data struct equal to the file which with the index of filenumber(input)
+    struct file *new_file = curproc->descriptor_table[filenumber];
+
+    // Check the the file hasn't been opened in O_RDONLY mode
+    int mode = new_file->file_mode & O_ACCMODE;
+    if(mode == O_RDONLY){
+      return EBADF;
+      }
+    //Initialize a uio suitable for I/O from a kernel buffer
+    struct iovec iov;
+        struct uio myuio;
+    //acquire the open file lock and create a uio in UIO_USERSPACE and UIO_WRITE mode
+    lock_acquire(new_file -> file_lock);
+    off_t new_offset = new_file->file_offset;
+
+    uio_uinit(&iov, &myuio, buffer, size, file->file_offset, UIO_WRITE);
+
+    int result = VOP_READ(new_file->file_vnode, &myuio);
+    if (result) {
+      lock_release(new_file->file_lock);
+      return result;
+    }
+
+    //caculate the read amount by use initial file_offset minus new_offset return by uio
+    new_file->file_lock = myuio.uio_offset;
+    *retval = new_file->file_offset - new_offset;
+    lock_release(new_file->file_lock);
+
+    return 0；
+
 }
 
 
@@ -165,7 +278,7 @@ int file_dup2(int curfd, int newfd) {
 
 
 
-int file_lseek(int fd, off_t offset, userptr_t whence, off_t *retval) {
+int file_lseek(int fd, off_t offset, userptr_t whence, int *retval) {
 	//check if file descriptor is legit
 	if (fd < 0 || fd >= OPEN_MAX) {
 		return EBADF;
@@ -173,19 +286,14 @@ int file_lseek(int fd, off_t offset, userptr_t whence, off_t *retval) {
 	if (curproc->descriptor_table[fd] == NULL){
 		return EBADF;
 	}
-	struct file *new_file = curproc->descriptor_table[fd];	
 
-	
+	struct file *new_file = curproc->descriptor_table[fd];	
 	//Check if this file is seekable.
 	if(!VOP_ISSEEKABLE(new_file->vnode)){
 		return ESPIPE;
 	}
 
-	//get size of the file in stat struct.
-	struct stat file_stat;
-	if(int err = VOP_STAT(new_file->vnode, &file_stat)){
-		return err;
-	}
+
 	//copy whence from kernel to userland
 	int user_whence;
 	if(int err2 = copyin(whence, &user_whence, sizeof(int));) {
@@ -210,6 +318,11 @@ int file_lseek(int fd, off_t offset, userptr_t whence, off_t *retval) {
 		lock_release(new_file->file_lock);
 	// SEEK_END
 	}else if (use_whence == SEEK_END) {
+		//get size of the file in stat struct.
+		struct stat file_stat;
+		if(int err = VOP_STAT(new_file->vnode, &file_stat)){
+			return err;
+		}
 		if(file_stat.st_size + offset < 0){
 			return EINVAL;
 		}
@@ -220,8 +333,4 @@ int file_lseek(int fd, off_t offset, userptr_t whence, off_t *retval) {
 
 	return 0;
 }
-
-
-
-
 
