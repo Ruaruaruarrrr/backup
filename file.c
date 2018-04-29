@@ -97,3 +97,131 @@ int sys_open(userptr_t filename, int mode, int *retval){
 
 
 
+int file_close(int fd) {
+
+	//check if file descriptor is legit
+	if (fd < 0 || fd >= OPEN_MAX) {
+		return EBADF;
+	}
+	if (curproc->descriptor_table[fd] == NULL){
+		return EBADF;
+	}
+	struct file *new_file = curproc->descriptor_table[fd];	
+
+	//create a lock for accessing the table
+	lock_acquire(new_file->file_lock);
+	proc->descriptor_table[fd] = NULL;
+	new-file->file_ref -= 1;
+	lock_release(new_file->file_lock);
+
+	//if it is the last reference of this file
+	if (new_file->file_ref == 0) {
+		vfs_close(file->v_ptr);
+		lock_destroy(new_file->file_lock);
+		kfree(new_file);
+	}
+
+	return 0;
+}
+
+
+
+int file_dup2(int curfd, int newfd) {
+
+	//check if file descriptor is legit
+	if (curfd < 0 || curfd >= OPEN_MAX)
+		return EBADF;
+	}
+	if (newfd < 0 || newfd >= OPEN_MAX) {
+		return EBADF;
+	}
+
+	//check duplicate
+	if (curfd == newfd){
+		return 0;
+	}
+
+	//close the file that newfd point to
+	if (curproc->descriptor_table[newfd] != NULL) {
+		int err = file_close(newfd);
+		if (err == 1) {
+			return err;
+		}
+	}
+
+	//add reference to the file
+	struct file *new_file = curproc->descriptor_table[currfd];
+	//create a lock for accessing the table
+	lock_acquire(new_file->file_lock);
+	new_file->ref++;
+	lock_release(new_file->file_lock);
+
+	//clone the current file struct to newfd
+	curproc->descriptor_table[newfd] = newfile;
+
+	return 0;
+}
+
+
+
+
+int file_lseek(int fd, off_t offset, userptr_t whence, off_t *retval) {
+	//check if file descriptor is legit
+	if (fd < 0 || fd >= OPEN_MAX) {
+		return EBADF;
+	}
+	if (curproc->descriptor_table[fd] == NULL){
+		return EBADF;
+	}
+	struct file *new_file = curproc->descriptor_table[fd];	
+
+	
+	//Check if this file is seekable.
+	if(!VOP_ISSEEKABLE(new_file->vnode)){
+		return ESPIPE;
+	}
+
+	//get size of the file in stat struct.
+	struct stat file_stat;
+	if(int err = VOP_STAT(new_file->vnode, &file_stat)){
+		return err;
+	}
+	//copy whence from kernel to userland
+	int user_whence;
+	if(int err2 = copyin(whence, &user_whence, sizeof(int));) {
+		return err2;
+	}
+
+	// SEEK_SET
+	if (use_whence == SEEK_SET) {
+		if (offset < 0) {
+			return EINVAL;
+		}
+		lock_acquire(new_file->file_lock);
+		*retval = new_file->file_offset = offset;
+		lock_release(new_file->file_lock);
+	// SEEK_CUR	
+	}else if (use_whence == SEEK_CUR) {
+		if(new_file->file_offset + offset < 0) {
+			return EINVAL;
+		}
+		lock_acquire(new_file->file_lock);
+		*retval = new_file->file_offset += offset;
+		lock_release(new_file->file_lock);
+	// SEEK_END
+	}else if (use_whence == SEEK_END) {
+		if(file_stat.st_size + offset < 0){
+			return EINVAL;
+		}
+		lock_acquire(new_file->file_lock);
+		*retval = new_file->file_offset = file_stat.st_size + offset; 
+		lock_release(new_file->file_lock);
+	}
+
+	return 0;
+}
+
+
+
+
+
