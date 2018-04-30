@@ -334,3 +334,26 @@ int file_lseek(int fd, off_t offset, userptr_t whence, int *retval) {
 	return 0;
 }
 
+
+
+
+int table_init() {
+	// create stdout file desc
+	char name[] = "con:" ;
+
+	int err1 = ceate_open_file(name, O_RDONLY, 1);
+	if (err1) {
+		return err1;
+	}
+
+	// create stderror file desc
+	int err2 = create_open_file(name, O_WRONLY, 2);
+	if (err2) {
+		return err2;
+	}
+}
+
+
+
+
+
