@@ -19,7 +19,37 @@
  * Add your file-related functions here ...
  */
 
+int file_read(int filehandler, userptr_t buf, size_t size, int *ret) {
+	if(filehandler < 0 || filehandler >= OPEN_MAX || !curproc->descriptor_table[filehandler]) {
+		return EBADF;
+	}
+	struct file *new_file = curproc->descriptor_table[filehandler];
 
+	int how = new_file->file_mode & O_ACCMODE;
+	if (how == O_WRONLY) {
+		return EBADF;
+	}
+
+	struct iovec iov;
+	struct uio myuio;
+
+	lock_acquire(new_file->new_lock);
+	off_t old_offset = new_file->file_offset;
+
+	uio_kinit(&iov, &myuio, buf, size, new_file->file_offset, UIO_READ);
+
+	int result = VOP_READ(new_file->file_vnode, &myuio);
+	if (result) {
+		lock_release(new_file->file_lock);
+		return result;
+	}
+
+	file->offset = myuio.uio_offset;
+	*ret = new_file->file_offset - old_offset;
+	lock_release(new_file->file_lock);
+
+	return 0;
+}
 
 
 int file_open(userptr_t filename, int flags, int *ret) {
