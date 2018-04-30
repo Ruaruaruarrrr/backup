@@ -19,6 +19,57 @@
  * Add your file-related functions here ...
  */
 
+int file_read(int fileNumber, userptr_t buffer, size_t size, int *retval){
+    
+
+    //check tht input fileNumber valid
+    if(fileNumber < 0 || fileNumber >= OPEN_MAX || !curproc->descriptor_table[fileNumber]){
+        return EBADF; // bad file number
+    }
+    //creat a new file data struct equal to the file which with the index of filenumber(input)
+    struct file *new_file = curproc->descriptor_table[fileNumber];
+
+    // Check the the file hasn't been opened in O_WRONLY mode
+    int mode = new_file->file_mode & O_ACCMODE;
+    if(mode == O_WRONLY){
+      return EBADF;
+    }
+
+    //Initialize a uio suitable for I/O from a kernel buffer
+    struct iovec iov;
+    struct uio myuio;
+
+  
+    //acquire the open file lock and create a uio in UIO_USERSPACE and UIO_READ mode
+    lock_acquire(new_file -> file_lock);
+    off_t o_offset = new_file->file_offset;
+
+    uio_kinit(&iov, &myuio, buffer, size, new_file->file_offset, UIO_READ);
+
+
+    int result = VOP_READ(new_file->file_vnode, &myuio);
+         if (result) {
+                lock_release(new_file->file_lock);
+                return result;
+        }
+
+    //caculate the read amount by use initial file_offset minus new_offset return by uio
+    new_file->file_offset = myuio.uio_offset;
+    *retval = new_file->file_offset - o_offset;
+    //kprintf("%d", &retval);
+    lock_release(new_file->file_lock);
+
+    return 0;
+}
+
+
+///////////
+
+
+
+
+
+
 int file_read(int filehandler, userptr_t buf, size_t size, int *ret) {
 	if(filehandler < 0 || filehandler >= OPEN_MAX || !curproc->descriptor_table[filehandler]) {
 		return EBADF;
