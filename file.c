@@ -20,6 +20,81 @@
  */
 
 
+
+
+int file_open(userptr_t filename, int flags, int *ret) {
+	if (filename == NULL) {
+		return EFAULT;
+	}
+	char *kfilename = kmalloc((PATH_MAX + 1)*sizeof(char));
+	if (kfilename == NULL) {
+		return ENFILE;
+	}
+	size_t got;
+	int result = copyinstr(filename, kfilename, PATH_MAX + 1, &got);
+	if (result) {
+		kfree(kfilename);
+		return result;
+	}
+
+	int i;
+	for (i = 0; i < OPEN_MAX; i++) {
+		if (curproc->descriptor_table[i] == NULL) {
+			break;
+		}
+	}
+	if (i == OPEN_MAX) {
+		kfree(kfilename);
+		return EMFILE;
+	}
+
+	int err = create_open_file(kfilename, flags, i);
+	if(err){
+		kfree(kfilename);
+		return err;
+	}
+
+	*ret = i;
+	return 0;
+}
+
+
+
+
+static int create_open)_file(char *filename, int flags, int descriptor){
+	struct file *new_file = kmalloc(sizeof(struct file*));
+	if(!file){
+		return ENFILE;
+	}
+ 
+	int result = vfs_open(filename, flags, 0, &new_file->file_vnode);
+	if (result) {
+		kfree(new_file);
+		return result;
+	}
+
+	new_file->file_lock = lock_create("open file lock");
+	if(!new_file->file_lock) {
+		vfs_close(new_file->file_vnode);
+		kfree(new_file);
+		return ENFILE;
+	}
+
+	new_file->file_offset = 0;
+	new_file->file_mode = flags;
+	new_file->file_ref = 1;
+	curproc->descriptor_table[descriptor] = file;
+
+	return 0;
+}
+
+
+
+
+
+
+
+
 int create_open_file(char kernel_filename, int mode, int index){
     
     struct file *new_file = kmalloc(sizeof(struct file*));
