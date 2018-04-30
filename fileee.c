@@ -77,7 +77,7 @@ int sys_open(userptr_t filename, int mode, int *retval){
 		return EMFILE;
 	}
 
-	int err2 = create_open_file(kernel_filename, mode, i);
+	int err2 = open(kernel_filename, mode, i);
 	if(err2){
 		kfree(kernel_filename);
 		return err2;
@@ -252,7 +252,7 @@ int sys_dup2(int curfd, int newfd) {
 
 	//close the file that newfd point to
 	if (curproc->descriptor_table[newfd] != NULL) {
-		int err = file_close(newfd);
+		int err = sys_close(newfd);
 		if (err == 1) {
 			return err;
 		}
@@ -337,21 +337,21 @@ int sys_lseek(int fd, off_t offset, userptr_t whence, int64_t *retval) {
 	return 0;
 }
 
-void table_init() {
+void open_std() {
 	
 	char name[] = "con:";
     char name1[]= "con:";
     char name2[] = "con:";
     // create stdin file desc
-    create_open_file(name, O_WRONLY, 0);
+    open(name, O_WRONLY, 0);
    
     // create stdout file desc
-	create_open_file(name1, O_WRONLY, 1);
+	open(name1, O_WRONLY, 1);
 	/*if (err1) {
 		return err1;
 	}*/
 	// create stderror file desc
-	create_open_file(name2, O_WRONLY, 2);
+	open(name2, O_WRONLY, 2);
 	/*if (err2) {
 		return err2;
 	}*/
